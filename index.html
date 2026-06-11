@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhatsApp a Sheets</title>
+<style>
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+    background: #f5f5f4;
+    color: #2c2c2a;
+  }
+  h1 { font-size: 18px; font-weight: 500; }
+  p.hint { font-size: 13px; color: #5f5e5a; }
+  textarea, button {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 14px;
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid #d3d1c7;
+  }
+  textarea { resize: vertical; font-family: monospace; font-size: 12px; }
+  button {
+    background: #3C3489;
+    color: white;
+    border: none;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; }
+  #status { font-size: 13px; color: #5f5e5a; min-height: 18px; white-space: pre-wrap; margin-bottom: 8px; }
+  .card {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #d3d1c7;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: none;
+  }
+  table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  td { padding: 4px 0; vertical-align: top; }
+  td:first-child { color: #5f5e5a; padding-right: 8px; white-space: nowrap; }
+  td:last-child { text-align: right; }
+</style>
+</head>
+<body>
+
+<h1>WhatsApp a Sheets</h1>
+<p class="hint">Pegá el JSON que te dio Claude en el proyecto:</p>
+
+<textarea id="input" rows="6" placeholder='{"comercio":"...", "contacto":"...", ...}'></textarea>
+
+<button id="parseBtn">Previsualizar</button>
+
+<div id="status"></div>
+
+<div class="card" id="preview">
+  <table id="previewTable">
+    <tbody id="previewBody"></tbody>
+  </table>
+</div>
+<button id="sendBtn" style="display:none;">Enviar a Google Sheet</button>
+
+<script>
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbz3D7IA9mjdhibZm1fEICtTHkAMm5K4LI-MeyWaenmLt6HH8pBjhmkwWXsuvXhveKJcBg/exec";
+
+const fields = [
+  ["comercio", "Comercio"],
+  ["contacto", "Con quien hable"],
+  ["telefono", "Telefono"],
+  ["direccion", "Direccion"],
+  ["equipos", "Equipos que usa"],
+  ["calificadoPromo", "Calificado para promo"],
+  ["email", "Email"],
+  ["notas", "Notas"]
+];
+
+let currentData = null;
+
+function setStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.color = isError ? '#A32D2D' : '#5f5e5a';
+}
+
+function renderPreview(data) {
+  const body = document.getElementById('previewBody');
+  body.innerHTML = '';
+  fields.forEach(([key, label]) => {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td');
+    td1.textContent = label;
+    const td2 = document.createElement('td');
+    td2.contentEditable = true;
+    td2.dataset.key = key;
+    td2.textContent = data[key] || '';
+    td2.addEventListener('input', () => { currentData[key] = td2.textContent; });
+    tr.appendChild(td1);
+    tr.appendChild(td2);
+    body.appendChild(tr);
+  });
+  document.getElementById('preview').style.display = 'block';
+  document.getElementById('sendBtn').style.display = 'block';
+}
+
+document.getElementById('parseBtn').addEventListener('click', () => {
+  const text = document.getElementById('input').value.trim();
+  if (!text) { setStatus('Pega el JSON primero', true); return; }
+  try {
+    let raw = text.replace(/```json|```/g, '').trim();
+    currentData = JSON.parse(raw);
+    renderPreview(currentData);
+    setStatus('Revisa los datos y enviá al Sheet (podés tocar y editar)');
+  } catch (err) {
+    setStatus('JSON invalido: ' + err.message, true);
+    document.getElementById('preview').style.display = 'none';
+    document.getElementById('sendBtn').style.display = 'none';
+  }
+});
+
+document.getElementById('sendBtn').addEventListener('click', async function() {
+  if (!currentData) return;
+  this.disabled = true;
+  setStatus('Enviando a Google Sheet...');
+
+  const formData = new FormData();
+  formData.append('payload', JSON.stringify(currentData));
+
+  try {
+    const resp = await fetch(SHEET_URL, {
+      method: "POST",
+      body: formData
+    });
+    setStatus('Enviado (status ' + resp.status + ')');
+    document.getElementById('input').value = '';
+    document.getElementById('preview').style.display = 'none';
+    this.style.display = 'none';
+    currentData = null;
+  } catch (err) {
+    setStatus('Error al enviar: ' + err.message, true);
+  }
+  this.disabled = false;
+});
+</script>
+
+</body>
+</html>
